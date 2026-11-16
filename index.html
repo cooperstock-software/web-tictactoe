@@ -1,0 +1,555 @@
+<title>Tic Tac Toe</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Layout: a copy of the Delphi form (331px wide, 75px cells, 2px grid lines), drawn in "units" (--u)
+     so the whole window scales to fit the screen without changing proportions. The Delphi .dfm puts the
+     Game Mode box at y=248 and the buttons at y=371, which suits a smaller board; with 75px cells the board
+     runs to y=299, so here those two rows sit lower (323 and 446) and the window is taller (499, not 424). */
+  :root {
+    --page: #e8ebef;        /* cool grey ground behind the window */
+    --surface: #f2f3f5;     /* the form's client area (clBtnFace) */
+    --bar: #ffffff;         /* caption strip */
+    --edge: #c4c9d0;        /* window and control borders */
+    --ink: #14181d;         /* text, letters and grid lines */
+    --muted: #5d6671;       /* hint text, disabled text */
+    --btn: #e3e6ea;
+    --btn-hover: #d6dae0;
+    --hover-cell: rgba(20, 24, 29, 0.07);
+    --accent: #0a64c8;      /* focus rings and radio buttons */
+    --win: #e01e1e;         /* the red win line, as in the Delphi program */
+    --shadow: 0 10px 30px rgba(20, 30, 45, 0.16);
+    --font: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --u: clamp(0.8px, min((100vw - 32px) / 331, (100vh - 150px) / 531), 1.6px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page: #101316; --surface: #23272c; --bar: #1a1d21; --edge: #3a4047; --ink: #eceff3; --muted: #99a2ad;
+      --btn: #323840; --btn-hover: #3d444d; --hover-cell: rgba(236, 239, 243, 0.09);
+      --accent: #5ea8ff; --win: #ff5252; --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #101316; --surface: #23272c; --bar: #1a1d21; --edge: #3a4047; --ink: #eceff3; --muted: #99a2ad;
+    --btn: #323840; --btn-hover: #3d444d; --hover-cell: rgba(236, 239, 243, 0.09);
+    --accent: #5ea8ff; --win: #ff5252; --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--font);
+    padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 24px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .win {
+    width: calc(331 * var(--u) + 2px);
+    background: var(--surface);
+    border: 1px solid var(--edge);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .caption {
+    margin: 0;
+    height: calc(30 * var(--u));
+    padding-inline: calc(12 * var(--u));
+    display: flex;
+    align-items: center;
+    background: var(--bar);
+    border-bottom: 1px solid var(--edge);
+    font-size: calc(12.5 * var(--u));
+    font-weight: 400;
+    letter-spacing: 0.01em;
+  }
+  .client {
+    position: relative;
+    width: calc(331 * var(--u));
+    height: calc(499 * var(--u));
+  }
+
+  .instr {
+    position: absolute;
+    left: calc(24 * var(--u));
+    top: calc(8 * var(--u));
+    width: calc(307 * var(--u));
+    font-size: calc(17 * var(--u));
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  /* ---- board ---- */
+  .board {
+    position: absolute;
+    left: calc(60 * var(--u));
+    top: calc(70 * var(--u));
+    width: calc(229 * var(--u));
+    height: calc(229 * var(--u));
+  }
+  .rule { position: absolute; background: var(--ink); }
+  .rule.h { left: 0; width: 100%; height: calc(2 * var(--u)); }
+  .rule.v { top: 0; height: 100%; width: calc(2 * var(--u)); }
+  .cell {
+    position: absolute;
+    width: calc(75 * var(--u));
+    height: calc(75 * var(--u));
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: calc(48 * var(--u));
+    font-weight: 700;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: default;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .board[data-live="1"] .cell:empty { cursor: pointer; }
+  .board[data-live="1"] .cell:empty:hover { background: var(--hover-cell); }
+  .cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+  .cell.nope { animation: nope 0.22s ease-out; }
+  @keyframes nope { from { background: color-mix(in srgb, var(--win) 28%, transparent); } to { background: transparent; } }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+  .overlay.on { pointer-events: auto; }
+  .winline { stroke: var(--win); stroke-width: 6; stroke-linecap: round; fill: none; }
+  .winline.draw { stroke-dasharray: 1 1; animation: draw 0.28s ease-out; }
+  @keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+
+  /* ---- game mode group ---- */
+  .group {
+    position: absolute;
+    left: calc(24 * var(--u));
+    top: calc(323 * var(--u));
+    min-width: calc(265 * var(--u));
+    max-width: calc(307 * var(--u));
+    height: calc(105 * var(--u));
+    margin: 0;
+    padding: 0 calc(12 * var(--u)) calc(6 * var(--u));
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
+    font-size: calc(17 * var(--u));
+  }
+  .group legend { padding: 0 calc(4 * var(--u)); font-weight: 700; font-size: calc(17 * var(--u)); }
+  .group label {
+    display: flex;
+    align-items: center;
+    gap: calc(8 * var(--u));
+    white-space: nowrap;
+    line-height: 1.2;
+    cursor: pointer;
+  }
+  .group input[type="radio"] {
+    width: calc(15 * var(--u));
+    height: calc(15 * var(--u));
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .group:disabled { color: var(--muted); }
+  .group:disabled label, .group:disabled input { cursor: default; }
+
+  /* ---- buttons ---- */
+  .btn {
+    position: absolute;
+    top: calc(446 * var(--u));
+    width: calc(75 * var(--u));
+    height: calc(33 * var(--u));
+    margin: 0;
+    padding: 0;
+    background: var(--btn);
+    color: var(--ink);
+    border: 1px solid var(--edge);
+    border-radius: 4px;
+    font-family: var(--font);
+    font-size: calc(17 * var(--u));
+    cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { background: var(--btn-hover); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn:disabled { color: var(--muted); opacity: 0.65; cursor: default; }
+  #start { left: calc(24 * var(--u)); }
+  #clear { left: calc(134 * var(--u)); }
+
+  .hint { margin: 0; font-size: 13px; color: var(--muted); text-align: center; text-wrap: balance; }
+  kbd { font: inherit; font-weight: 600; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .winline.draw, .cell.nope { animation: none; }
+  }
+</style>
+
+<main style="display:contents">
+  <div class="win">
+    <h1 class="caption">Tic Tac Toe</h1>
+    <div class="client">
+      <div class="instr" id="instr" role="status" aria-live="polite">Select a Game Mode then click Start</div>
+
+      <div class="board" id="board" data-live="0">
+        <div class="rule h" style="top:calc(75 * var(--u))"></div>
+        <div class="rule h" style="top:calc(152 * var(--u))"></div>
+        <div class="rule v" style="left:calc(75 * var(--u))"></div>
+        <div class="rule v" style="left:calc(152 * var(--u))"></div>
+        <!-- cells are added by script -->
+        <svg class="overlay" id="overlay" viewBox="0 0 229 229" aria-hidden="true">
+          <line class="winline" id="winline" pathLength="1" x1="0" y1="0" x2="0" y2="0" visibility="hidden"></line>
+        </svg>
+      </div>
+
+      <fieldset class="group" id="group">
+        <legend>Game Mode</legend>
+        <label><input type="radio" name="mode" value="0"> Computer goes first (I play O)</label>
+        <label><input type="radio" name="mode" value="1"> I go first (I play X)</label>
+        <label><input type="radio" name="mode" value="2"> Two players</label>
+      </fieldset>
+
+      <button class="btn" id="start" type="button"><u>S</u>tart</button>
+      <button class="btn" id="clear" type="button"><u>C</u>lear</button>
+    </div>
+  </div>
+  <p class="hint">Keyboard: <kbd>Alt+S</kbd> Start, <kbd>Alt+C</kbd> Clear (Option on a Mac).</p>
+</main>
+
+<script>
+/* ENGINE START  (port of MinMaxSolve.pas; boards are 3x3, indexed [row][col] from 0) */
+const EMPTY = 0, X = 1, O = 2;
+const WIN_SCORE = 10;
+
+function opponent(player) { return player === X ? O : X; }
+
+// true if the given player has three in a row
+function hasWon(b, p) {
+  for (let i = 0; i < 3; i++) {
+    if (b[i][0] === p && b[i][1] === p && b[i][2] === p) return true;
+    if (b[0][i] === p && b[1][i] === p && b[2][i] === p) return true;
+  }
+  if (b[0][0] === p && b[1][1] === p && b[2][2] === p) return true;
+  if (b[0][2] === p && b[1][1] === p && b[2][0] === p) return true;
+  return false;
+}
+
+function boardFull(b) {
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) if (b[r][c] === EMPTY) return false;
+  return true;
+}
+
+// Value of the position from the point of view of "player", who is about to move.
+// Moves are tried and undone in place; the board is always returned to its original state.
+function score(b, player, depth) {
+  if (hasWon(b, opponent(player))) return -WIN_SCORE + depth;   // a later loss is better than an earlier one
+  if (boardFull(b)) return 0;
+  let result = -Infinity;
+  for (let r = 0; r < 3; r++)
+    for (let c = 0; c < 3; c++)
+      if (b[r][c] === EMPTY) {
+        b[r][c] = player;
+        const value = -score(b, opponent(player), depth + 1);
+        b[r][c] = EMPTY;
+        if (value > result) result = value;
+      }
+  return result;
+}
+
+// Picks the computer's move at random among all equally good squares. Returns [row, col].
+function chooseMove(b, player, rng = Math.random) {
+  let bestValue = -Infinity;
+  const best = [];
+  for (let r = 0; r < 3; r++)
+    for (let c = 0; c < 3; c++)
+      if (b[r][c] === EMPTY) {
+        b[r][c] = player;
+        const value = -score(b, opponent(player), 1);
+        b[r][c] = EMPTY;
+        if (value > bestValue) { bestValue = value; best.length = 0; best.push([r, c]); }
+        else if (value === bestValue) best.push([r, c]);
+      }
+  return best[Math.floor(rng() * best.length)];
+}
+/* ENGINE END */
+
+/* GAME START  (port of TTT.pas) */
+const LEFT_START = 60, TOP_START = 70, CELL_SIZE = 75, LINE_WIDTH = 2;
+const SPAN = CELL_SIZE * 3 + LINE_WIDTH * 2;             // 229
+const M_COMPUTER_FIRST = 0, M_PLAYER_FIRST = 1, M_TWO_PLAYER = 2;
+const STORE_KEY = 'tictactoe.PlayMethod';                // replaces ttt.ini [All] PlayMethod
+
+const $ = (id) => document.getElementById(id);
+const instr = $('instr'), boardEl = $('board'), group = $('group');
+const startBtn = $('start'), clearBtn = $('clear');
+const overlay = $('overlay'), winline = $('winline');
+const radios = [...document.querySelectorAll('input[name="mode"]')];
+
+// State (what the Delphi form keeps in its fields and controls)
+let S = {
+  cap: Array(9).fill(''),        // the cells' captions: '', 'X' or 'O'
+  nextPlay: 1,
+  won: false,
+  started: false,                // Delphi: not StartButton.Enabled
+  playMethod: M_PLAYER_FIRST,
+  computerLetter: '', playerLetter: '',
+  computerMove: EMPTY, playerMove: EMPTY,
+  msg: 'Select a Game Mode then click Start',
+  line: null                     // {x1, y1, x2, y2} when the red win line is showing
+};
+let board = [[0,0,0],[0,0,0],[0,0,0]];
+let drawNext = false;
+
+// ----- cells -----
+const cellEls = [];
+for (let row = 1; row <= 3; row++) {
+  for (let col = 1; col <= 3; col++) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cell';
+    b.dataset.tag = String((row - 1) * 3 + col);          // Tag := (row-1)*3+col
+    b.style.left = `calc(${(CELL_SIZE + LINE_WIDTH) * (col - 1)} * var(--u))`;
+    b.style.top = `calc(${(CELL_SIZE + LINE_WIDTH) * (row - 1)} * var(--u))`;
+    b.addEventListener('click', () => cellClick(b));
+    boardEl.insertBefore(b, overlay);
+    cellEls.push(b);
+  }
+}
+
+// ----- sound -----
+let audio = null;
+function beep() {
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === 'suspended') audio.resume();
+    const t = audio.currentTime, osc = audio.createOscillator(), g = audio.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = 660;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.12, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+    osc.connect(g).connect(audio.destination);
+    osc.start(t);
+    osc.stop(t + 0.18);
+  } catch (e) { /* no audio available */ }
+}
+function nope(el) {
+  beep();
+  if (el) { el.classList.remove('nope'); void el.offsetWidth; el.classList.add('nope'); }
+}
+
+// ----- persistence of the Game Mode (ReadIni / WriteIni) -----
+function readIni() {
+  let v = M_PLAYER_FIRST;
+  try {
+    const n = parseInt(localStorage.getItem(STORE_KEY), 10);
+    if (n >= 0 && n <= 2) v = n;
+  } catch (e) {}
+  S.playMethod = v;
+}
+function writeIni() {
+  try { localStorage.setItem(STORE_KEY, String(S.playMethod)); } catch (e) {}
+}
+
+// ----- rendering -----
+function render() {
+  instr.textContent = S.msg;
+  for (let i = 0; i < 9; i++) {
+    const el = cellEls[i], v = S.cap[i];
+    if (el.textContent !== v) el.textContent = v;
+    const row = Math.floor(i / 3) + 1, col = (i % 3) + 1;
+    el.setAttribute('aria-label', `Row ${row}, column ${col}: ${v || 'empty'}`);
+  }
+  boardEl.dataset.live = S.started && !S.won ? '1' : '0';
+  startBtn.disabled = S.started;
+  clearBtn.disabled = false;
+  group.disabled = S.started;
+  radios.forEach((r) => { r.checked = Number(r.value) === S.playMethod; });
+  if (S.line) {
+    winline.setAttribute('x1', S.line.x1); winline.setAttribute('y1', S.line.y1);
+    winline.setAttribute('x2', S.line.x2); winline.setAttribute('y2', S.line.y2);
+    winline.setAttribute('visibility', 'visible');
+    winline.classList.remove('draw');
+    if (drawNext) { void winline.getBoundingClientRect(); winline.classList.add('draw'); }
+    overlay.classList.add('on');
+  } else {
+    winline.setAttribute('visibility', 'hidden');
+    winline.classList.remove('draw');
+    overlay.classList.remove('on');
+  }
+  drawNext = false;
+}
+
+// ----- game logic (TTTTForm methods) -----
+function fillBoard() {
+  for (let row = 0; row < 3; row++)
+    for (let col = 0; col < 3; col++) {
+      const ch = S.cap[row * 3 + col];
+      board[row][col] = ch === 'X' ? X : ch === 'O' ? O : EMPTY;
+    }
+}
+
+function setPlayCaption(letter) { S.msg = 'Click to place an ' + letter; }
+
+// rows and cols are 1-based, as in the Delphi code
+function showWinLine(winner, row1, col1, row2, col2) {
+  if (S.playMethod === M_TWO_PLAYER) S.msg = winner + ' won!';
+  else if (winner === S.computerLetter) S.msg = 'Sorry, the computer won.';
+  else S.msg = 'You beat the computer!';
+
+  let x1, y1, x2, y2;
+  if (row1 === row2) {                       // across a row
+    x1 = 0; x2 = SPAN;
+    y1 = (CELL_SIZE + LINE_WIDTH) * (row1 - 1) + Math.floor(CELL_SIZE / 2); y2 = y1;
+  } else if (col1 === col2) {                // down a column
+    y1 = 0; y2 = SPAN;
+    x1 = (CELL_SIZE + LINE_WIDTH) * (col1 - 1) + Math.floor(CELL_SIZE / 2); x2 = x1;
+  } else if (col1 === 1) {                   // top left to bottom right
+    x1 = 0; y1 = 0; x2 = SPAN; y2 = SPAN;
+  } else {                                   // top right to bottom left
+    x1 = SPAN; y1 = 0; x2 = 0; y2 = SPAN;
+  }
+  S.line = { x1, y1, x2, y2 };
+  S.won = true;
+  drawNext = true;
+  focusSoon(clearBtn);
+}
+
+// true when the game should stop (a win or a tie)
+function hasWonOrTied(move) {
+  const winner = move === X ? 'X' : 'O';
+  for (let i = 1; i <= 3; i++) {
+    if (board[i-1][0] === move && board[i-1][1] === move && board[i-1][2] === move) { showWinLine(winner, i, 1, i, 3); return true; }
+    if (board[0][i-1] === move && board[1][i-1] === move && board[2][i-1] === move) { showWinLine(winner, 1, i, 2, i); return true; }
+  }
+  if (board[0][0] === move && board[1][1] === move && board[2][2] === move) { showWinLine(winner, 1, 1, 3, 3); return true; }
+  if (board[0][2] === move && board[1][1] === move && board[2][0] === move) { showWinLine(winner, 1, 3, 3, 1); return true; }
+
+  if (S.nextPlay > 9) {                      // no winner, and the board is full
+    S.msg = "It's a tie.";
+    focusSoon(clearBtn);
+  }
+  return S.nextPlay > 9;
+}
+
+function cellClick(el) {
+  const idx = cellEls.indexOf(el);
+  if (S.cap[idx] !== '' || S.won || !S.started) { nope(el); return; }
+  let row = Math.floor(idx / 3), col = idx % 3;
+
+  // record the player's click
+  S.cap[idx] = S.playMethod !== M_TWO_PLAYER ? S.playerLetter : (S.nextPlay % 2 === 1 ? 'X' : 'O');
+  const move = S.cap[idx] === 'X' ? X : O;
+  board[row][col] = move;
+
+  S.nextPlay++;
+  if (!hasWonOrTied(move)) {
+    if (S.playMethod === M_TWO_PLAYER) {
+      setPlayCaption(S.nextPlay % 2 === 1 ? 'X' : 'O');
+    } else {
+      fillBoard();
+      [row, col] = chooseMove(board, S.computerMove);
+      S.cap[row * 3 + col] = S.computerLetter;
+      board[row][col] = S.computerMove;
+      setPlayCaption(S.playerLetter);
+      S.nextPlay++;
+      hasWonOrTied(S.computerMove);
+    }
+  }
+  render();
+}
+
+function startClick() {
+  switch (S.playMethod) {
+    case M_COMPUTER_FIRST: {
+      S.computerLetter = 'X'; S.computerMove = X;
+      S.playerLetter = 'O'; S.playerMove = O;
+      // a somewhat random first move, in a corner
+      const corners = [[1, 1], [1, 3], [3, 1], [3, 3]];
+      const [row, col] = corners[Math.floor(Math.random() * 4)];
+      S.cap[(row - 1) * 3 + (col - 1)] = S.computerLetter;
+      board[row - 1][col - 1] = S.computerMove;
+      setPlayCaption('O');
+      S.nextPlay++;
+      break;
+    }
+    case M_PLAYER_FIRST:
+      S.computerLetter = 'O'; S.computerMove = O;
+      S.playerLetter = 'X'; S.playerMove = X;
+      setPlayCaption('X');
+      break;
+    case M_TWO_PLAYER:
+      setPlayCaption('X');
+      break;
+  }
+  S.started = true;
+  render();
+}
+
+function clearClick() {
+  S.line = null;
+  S.won = false;
+  S.nextPlay = 1;
+  S.started = false;
+  S.msg = 'Select a Game Mode then click Start';
+  S.cap = Array(9).fill('');
+  fillBoard();
+  render();
+  focusSoon(startBtn);
+}
+
+function focusSoon(el) {
+  // focus after the render so a button that is being enabled can take it
+  setTimeout(() => { try { el.focus({ preventScroll: true }); } catch (e) {} }, 0);
+}
+
+// ----- events -----
+startBtn.addEventListener('click', startClick);
+clearBtn.addEventListener('click', clearClick);
+overlay.addEventListener('click', () => nope(null));      // clicking the win-line overlay beeps
+radios.forEach((r) => r.addEventListener('click', (e) => {
+  S.playMethod = Number(r.value);
+  writeIni();
+  // as in the Delphi program, a mouse click moves focus on to Start (arrow keys keep it in the group)
+  if (e.detail > 0 && !startBtn.disabled) focusSoon(startBtn);
+}));
+document.addEventListener('keydown', (e) => {
+  if (!e.altKey || e.ctrlKey || e.metaKey) return;
+  if (e.code === 'KeyS') { e.preventDefault(); if (!startBtn.disabled) startBtn.click(); }
+  else if (e.code === 'KeyC') { e.preventDefault(); clearBtn.click(); }
+});
+
+// ----- start-up (TTTFormCreate), with state carried across a republish -----
+function boot(data) {
+  if (data && data.S) {
+    S = data.S;
+  } else {
+    readIni();
+  }
+  fillBoard();
+  render();
+}
+try { window.claude?.hot?.snapshot?.(() => ({ S })); } catch (e) {}
+try {
+  if (window.claude?.hot?.ready) window.claude.hot.ready(boot);
+  else boot(window.claude?.hot?.data ?? {});
+} catch (e) { boot({}); }
+/* GAME END */
+</script>
